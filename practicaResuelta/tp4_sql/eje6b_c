@@ -1,0 +1,56 @@
+DELIMITER //
+CREATE PROCEDURE ejeB_cursor()
+BEGIN
+    -- 1) Declaraciones (todas al principio)
+    DECLARE fin_cursor INT DEFAULT 0;
+    DECLARE v_id_patient INT;
+    DECLARE v_count_appointments INT;
+    DECLARE fecha_actual DATETIME;
+    DECLARE usuario_actual VARCHAR(64);
+
+    -- Cursor que devuelve patient_id y cantidad
+    DECLARE cur_conteo_pacientes CURSOR FOR
+        SELECT a.patient_id, COUNT(*) AS cant_citas
+        FROM appointment a
+        GROUP BY a.patient_id;
+
+    -- Handler para fin de cursor
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET fin_cursor = 1;
+
+    -- Handler para errores SQL: hace rollback y sale
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+    END;
+
+    -- 2) Valores fijos para insertar
+    SET fecha_actual = NOW();
+    SET usuario_actual = SUBSTRING(CURRENT_USER(), 1, 16);
+
+    -- 3) Inicia transacción
+    START TRANSACTION;
+
+    -- (Opcional) limpiar tabla destino si hace falta
+    -- DELETE FROM appointments_per_patient;
+
+    -- 4) Abrir cursor y recorrer
+    OPEN cur_conteo_pacientes;
+
+    leer_loop: LOOP
+        FETCH cur_conteo_pacientes INTO v_id_patient, v_count_appointments;
+        IF fin_cursor = 1 THEN
+            LEAVE leer_loop;
+        END IF;
+
+        INSERT INTO appointments_per_patient (id_patient, count_appointments, last_update, `user`)
+        VALUES (v_id_patient, v_count_appointments, fecha_actual, usuario_actual);
+    END LOOP leer_loop;
+
+    CLOSE cur_conteo_pacientes;
+
+    -- 5) confirmar
+    COMMIT;
+END //
+DELIMITER ;
+
+
